@@ -124,7 +124,7 @@ if (useSupabase) {
     const insert = db.prepare("INSERT OR REPLACE INTO devices_master (id, name, category, default_watts, tags) VALUES (?, ?, ?, ?, ?)");
     seedDevices.forEach(d => insert.run(d.id, d.name, d.category, d.watts, JSON.stringify(d.tags)));
 
-    // Seed Flagship Products and Hardware
+    // Seed internet products and standalone hardware
     const seedProducts = [
       {
         id: 'p1',
@@ -343,6 +343,22 @@ if (useSupabase) {
         type: 'standalone',
         tags: ['internet', 'tier-b'],
         price: 55000
+      },
+      {
+        id: 'p16',
+        name: 'Taico 12V 100Ah LiFePO4 Battery',
+        description: 'Reliable lithium iron phosphate battery.',
+        type: 'standalone',
+        tags: ['battery', 'solar'],
+        price: 210000
+      },
+      {
+        id: 'p17',
+        name: '9Solar 190W Mono Panel',
+        description: 'Compact and efficient monocrystalline solar panel.',
+        type: 'standalone',
+        tags: ['panel', 'solar'],
+        price: 45000
       }
     ];
     const insertProduct = db.prepare("INSERT OR REPLACE INTO products (id, name, description, type, combination_data, tags, price) VALUES (?, ?, ?, ?, ?, ?, ?)");

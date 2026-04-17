@@ -30,6 +30,8 @@ export interface Inverter {
   cc_type: "pwm" | "mppt";
   max_parallel_units: number;
   price: number;
+  description?: string;
+  tags?: string[];
 }
 
 export interface Panel {
@@ -39,6 +41,8 @@ export interface Panel {
   voc: number;
   isc: number;
   price: number;
+  description?: string;
+  tags?: string[];
 }
 
 export interface Battery {
@@ -50,6 +54,8 @@ export interface Battery {
   max_parallel_strings: number;
   min_c_rate: number;
   price: number;
+  description?: string;
+  tags?: string[];
 }
 
 export interface Powerstation {

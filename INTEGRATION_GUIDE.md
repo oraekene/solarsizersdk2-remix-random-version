@@ -20,7 +20,7 @@ SolarSizer Pro provides a centralized sizing engine, a multi-user database, and 
 ### A. Iframe Embedding (Recommended)
 Embed the app into your website. Use URL parameters to control formatting and initial state.
 
-**Base URL**: `https://ais-dev-wttvbdqce7s75ppusm6y5x-428485733064.europe-west2.run.app`
+**Base URL**: `https://ais-dev-r334bdzfkxvedl7o2kkgd2-428485733064.europe-west2.run.app`
 
 #### URL Parameters:
 | Parameter | Values | Description |
@@ -32,7 +32,7 @@ Embed the app into your website. Use URL parameters to control formatting and in
 #### Example: Internet Hardware Stack Page
 ```html
 <iframe 
-  src="https://ais-dev-wttvbdqce7s75ppusm6y5x-428485733064.europe-west2.run.app/?tab=internet&compact=true" 
+  src="https://ais-dev-r334bdzfkxvedl7o2kkgd2-428485733064.europe-west2.run.app/?tab=internet&compact=true" 
   style="width:100%; height:900px; border:none;"
 ></iframe>
 ```

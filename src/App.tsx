@@ -67,6 +67,7 @@ const CATEGORIES: { value: DeviceCategory; label: string }[] = [
   { value: "motor", label: "Motor (Fan/Pump)" },
   { value: "heating", label: "Heating (Iron/Heater)" },
   { value: "electronics", label: "Electronics (TV/Laptop)" },
+  { value: "internet", label: "Internet (Starlink/Router)" },
 ];
 
 const REGIONS: { value: Region; label: string }[] = [
@@ -575,10 +576,10 @@ export default function App() {
     
     // Fetch global hardware
     sdk.getHardware().then(data => {
-      const globalInverters = data.filter((h: any) => h.type === 'inverter').map((h: any) => h.data);
-      const globalPanels = data.filter((h: any) => h.type === 'panel').map((h: any) => h.data);
-      const globalBatteries = data.filter((h: any) => h.type === 'battery').map((h: any) => h.data);
-      const globalPowerstations = data.filter((h: any) => h.type === 'powerstation').map((h: any) => h.data);
+      const globalInverters = data.filter((h: any) => h.type === 'inverter').map((h: any) => ({ ...h.data, id: h.id }));
+      const globalPanels = data.filter((h: any) => h.type === 'panel').map((h: any) => ({ ...h.data, id: h.id }));
+      const globalBatteries = data.filter((h: any) => h.type === 'battery').map((h: any) => ({ ...h.data, id: h.id }));
+      const globalPowerstations = data.filter((h: any) => h.type === 'powerstation').map((h: any) => ({ ...h.data, id: h.id }));
 
       if (globalInverters.length > 0) setInverters(globalInverters);
       if (globalPanels.length > 0) setPanels(globalPanels);
@@ -1596,8 +1597,10 @@ export default function App() {
   };
 
   const generateQuote = (sys: SystemCombination) => {
-    // Generate usage profile first
-    generateUsageProfile();
+    // Generate usage profile first if devices exist
+    if (devices.length > 0) {
+      generateUsageProfile();
+    }
     
     const doc = new jsPDF();
     const date = new Date().toLocaleDateString();
@@ -1615,6 +1618,12 @@ export default function App() {
         finalAdvice = `Conditional (Lifestyle Adjusted): With your current adjustments, you still have a small deficit of ${adjustedLoad.deficit.toFixed(0)}Wh. Further minor cuts or grid support needed.`;
       }
     }
+
+    // Safety check for pricing
+    const invPrice = sys.inverter_price || 0;
+    const batPrice = sys.battery_price || 0;
+    const panPrice = sys.panel_price || 0;
+    const totalP = (sys.total_price || (invPrice + batPrice + panPrice)) || 0;
 
     // Header
     doc.setFontSize(22);
@@ -1656,10 +1665,10 @@ export default function App() {
     doc.text("ITEMIZED COST BREAKDOWN", 20, finalY);
 
     const costs = [
-      ["1", "Inverter Unit", `N${(sys.inverter_price || 0).toLocaleString()}`],
-      ["2", "Battery Storage Bank", `N${(sys.battery_price || 0).toLocaleString()}`],
-      ["3", "Solar PV Array", `N${(sys.panel_price || 0).toLocaleString()}`],
-      ["", "TOTAL INVESTMENT", `N${(sys.total_price || 0).toLocaleString()}`]
+      ["1", "Inverter Unit", `N${invPrice.toLocaleString()}`],
+      ["2", "Battery Storage Bank", `N${batPrice.toLocaleString()}`],
+      ["3", "Solar PV Array", `N${panPrice.toLocaleString()}`],
+      ["", "TOTAL INVESTMENT", `N${totalP.toLocaleString()}`]
     ];
 
     autoTable(doc, {
@@ -1668,7 +1677,7 @@ export default function App() {
       body: costs,
       theme: "grid",
       headStyles: { fillColor: [16, 185, 129] },
-      foot: [["", "GRAND TOTAL (Inc. 7.5% VAT)", `N${(sys.total_price * 1.075).toLocaleString()}`]],
+      foot: [["", "GRAND TOTAL (Inc. 7.5% VAT)", `N${(totalP * 1.075).toLocaleString()}`]],
       footStyles: { fillColor: [245, 245, 244], textColor: [0, 0, 0], fontStyle: "bold" }
     });
 
@@ -1792,9 +1801,9 @@ export default function App() {
                   <h2 className="font-semibold text-lg">Project Location</h2>
                 </div>
                 <div className="grid grid-cols-1 gap-2">
-                  {REGIONS.map((r) => (
+                  {REGIONS.map((r, idx) => (
                     <button
-                      key={r.value}
+                      key={r.value || `reg-${idx}`}
                       onClick={() => setRegion(r.value)}
                       className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
                         region === r.value 
@@ -1871,9 +1880,9 @@ export default function App() {
                   <div className="mb-4">
                     <label className="block text-xs font-bold uppercase tracking-wider text-stone-500 mb-1.5">Quick Add from Database</label>
                     <div className="flex flex-wrap gap-2">
-                      {masterDevices.map(md => (
+                      {masterDevices.map((md, idx) => (
                         <button
-                          key={md.id}
+                          key={md.id || `quick-md-${idx}`}
                           onClick={() => setNewDevice({
                             ...newDevice,
                             name: md.name,
@@ -1906,7 +1915,7 @@ export default function App() {
                       onChange={e => setNewDevice({...newDevice, category: e.target.value as DeviceCategory})}
                       className="w-full px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none"
                     >
-                      {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                      {CATEGORIES.map(c => <option key={`cat-opt-${c.value}`} value={c.value}>{c.label}</option>)}
                     </select>
                   </div>
                   <div>
@@ -2161,7 +2170,7 @@ export default function App() {
 
                         return finalDisplay.map((sys, idx) => (
                           <motion.div
-                            key={idx}
+                            key={`${sys.inverter}-${sys.battery_config}-${idx}`}
                             initial={{ opacity: 0, x: 20 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: idx * 0.05 }}
@@ -2423,11 +2432,29 @@ export default function App() {
                       onClick={() => {
                         if (product.combination_data) {
                           setSelectedSystemDetails(product.combination_data);
+                        } else {
+                          // For standalone, create a dummy combination to show info
+                          setSelectedSystemDetails({
+                            inverter: product.name,
+                            inverter_price: product.price,
+                            battery_config: "N/A",
+                            battery_price: 0,
+                            panel_config: "N/A",
+                            panel_price: 0,
+                            array_size_w: 0,
+                            battery_total_wh: 0,
+                            total_price: product.price,
+                            daily_yield: 0,
+                            deficit: 0,
+                            status: "Optimal",
+                            advice: product.description,
+                            log: ["Standalone product documentation."]
+                          });
                         }
                       }}
                       className="px-4 py-2 bg-stone-900 text-white text-xs font-bold rounded-xl hover:bg-stone-800 transition-all"
                     >
-                      View Specs
+                      {product.type === 'combination' ? 'View Specs' : 'View Details'}
                     </button>
                   </div>
                 </motion.div>
@@ -2483,9 +2510,9 @@ export default function App() {
               {/* List Internet Products */}
               {products
                 .filter(p => p.tags.includes('internet'))
-                .map(product => (
+                .map((product, pIdx) => (
                 <motion.div
-                  key={product.id}
+                  key={product.id || `ps-int-${pIdx}`}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden flex flex-col hover:shadow-md transition-all"
@@ -2573,21 +2600,21 @@ export default function App() {
                   <ListIcon className="w-5 h-5 text-stone-400" /> Master Devices
                 </h3>
                 <div className="space-y-3">
-                  {masterDevices.map((md) => (
-                    <div key={md.id} className="bg-stone-50 p-4 rounded-xl border border-stone-200 shadow-sm group relative">
+                  {masterDevices.map((md, idx) => (
+                    <div key={`md-${md.id || idx}`} className="bg-stone-50 p-4 rounded-xl border border-stone-200 shadow-sm group relative">
                       <div className="flex justify-between items-start mb-2">
                         <p className="font-bold text-sm">{md.name}</p>
-                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex gap-1 opacity-100 transition-opacity">
                           <button onClick={() => startEditingMasterDevice(md)} className="p-1 text-stone-400 hover:text-emerald-600 rounded" title="Edit"><Settings className="w-3 h-3" /></button>
                           <button onClick={() => deleteMasterDevice(md.id)} className="p-1 text-stone-400 hover:text-red-600 rounded" title="Delete"><Trash2 className="w-3 h-3" /></button>
                         </div>
-                        <div className="flex gap-1 flex-wrap">
-                          {md.tags.map(tag => (
-                            <span key={tag} className="px-1.5 py-0.5 bg-white text-stone-400 text-[8px] font-black uppercase rounded border border-stone-200">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
+                      </div>
+                      <div className="flex gap-1 flex-wrap mb-2">
+                        {md.tags.map((tag, tIdx) => (
+                          <span key={`md-tag-${idx}-${tIdx}`} className="px-1.5 py-0.5 bg-white text-stone-400 text-[8px] font-black uppercase rounded border border-stone-200">
+                            {tag}
+                          </span>
+                        ))}
                       </div>
                       <div className="text-xs text-stone-500">
                         {md.default_watts}W • {md.category}
@@ -2609,8 +2636,8 @@ export default function App() {
                   <Cpu className="w-5 h-5 text-emerald-600" /> Inverters
                 </h3>
                 <div className="space-y-3">
-                  {inverters.map((inv) => (
-                    <div key={inv.id} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm group relative">
+                  {inverters.map((inv, idx) => (
+                    <div key={inv.id || `inv-${idx}`} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm group relative">
                       <div className="flex justify-between items-start mb-2">
                         <p className="font-bold">{inv.name}</p>
                         <div className={`flex gap-1 transition-opacity ${isDeveloper ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
@@ -2641,8 +2668,8 @@ export default function App() {
                   <Sun className="w-5 h-5 text-amber-500" /> Solar Panels
                 </h3>
                 <div className="space-y-3">
-                  {panels.map((p) => (
-                    <div key={p.id} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm group relative">
+                  {panels.map((p, idx) => (
+                    <div key={p.id || `p-${idx}`} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm group relative">
                       <div className="flex justify-between items-start mb-2">
                         <p className="font-bold">{p.name}</p>
                         <div className={`flex gap-1 transition-opacity ${isDeveloper ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
@@ -2668,8 +2695,8 @@ export default function App() {
                   <BatteryIcon className="w-5 h-5 text-blue-600" /> Batteries
                 </h3>
                 <div className="space-y-3">
-                  {batteries.map((b) => (
-                    <div key={b.id} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm group relative">
+                  {batteries.map((b, idx) => (
+                    <div key={b.id || `b-${idx}`} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm group relative">
                       <div className="flex justify-between items-start mb-2">
                         <p className="font-bold">{b.name}</p>
                         <div className={`flex gap-1 transition-opacity ${isDeveloper ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
@@ -2696,8 +2723,8 @@ export default function App() {
                   <Zap className="w-5 h-5 text-stone-900" /> Powerstations
                 </h3>
                 <div className="space-y-3">
-                  {powerstations.map((ps) => (
-                    <div key={ps.id} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm group relative">
+                  {powerstations.map((ps, idx) => (
+                    <div key={ps.id || `ps-${idx}`} className="bg-white p-4 rounded-xl border border-stone-200 shadow-sm group relative">
                       <div className="flex justify-between items-start mb-2">
                         <p className="font-bold">{ps.name}</p>
                         <div className={`flex gap-1 transition-opacity ${isDeveloper ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
@@ -2753,7 +2780,7 @@ export default function App() {
                 </div>
               ) : (
                 internalLogs.map((log, i) => (
-                  <div key={i} className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm space-y-4">
+                  <div key={`int-log-${log.timestamp}-${i}`} className="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm space-y-4">
                     <div className="flex items-center justify-between border-b border-stone-100 pb-4">
                       <div className="flex items-center gap-3">
                         <div className="p-2 bg-stone-100 rounded-lg">
@@ -2800,9 +2827,9 @@ export default function App() {
                       </summary>
                       <div className="mt-4 space-y-4 max-h-60 overflow-y-auto p-4 bg-stone-900 rounded-xl">
                         {log.allLogs.map((path, pi) => (
-                          <div key={pi} className="border-l-2 border-stone-700 pl-4 space-y-1">
+                          <div key={`path-${pi}`} className="border-l-2 border-stone-700 pl-4 space-y-1">
                             {path.map((line, li) => (
-                              <p key={li} className="text-[10px] font-mono text-stone-400">{line}</p>
+                              <p key={`line-${li}`} className="text-[10px] font-mono text-stone-400">{line}</p>
                             ))}
                           </div>
                         ))}
@@ -3457,18 +3484,18 @@ export default function App() {
       {/* Add Hardware Modal */}
       <AnimatePresence>
         {showAddMasterDevice && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm overflow-hidden">
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden"
+              className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
             >
               <div className="p-6 border-b border-stone-100 flex items-center justify-between">
                 <h2 className="font-bold text-xl">{editingMasterDevice ? "Edit" : "Add"} Master Device</h2>
                 <button onClick={() => { setShowAddMasterDevice(false); setEditingMasterDevice(null); }} className="p-2 hover:bg-stone-100 rounded-full"><X className="w-5 h-5" /></button>
               </div>
-              <form className="p-6 space-y-4" onSubmit={saveMasterDevice}>
+              <form className="flex-1 overflow-y-auto p-6 space-y-4" onSubmit={saveMasterDevice}>
                 <div>
                   <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Device Name</label>
                   <input name="name" defaultValue={editingMasterDevice?.name} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" placeholder="e.g. LED Bulb" />
@@ -3493,7 +3520,7 @@ export default function App() {
                   <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Tags (comma separated)</label>
                   <input name="tags" defaultValue={editingMasterDevice?.tags?.join(", ")} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" placeholder="e.g. lighting, basic" />
                 </div>
-                <button type="submit" className="w-full py-3 bg-stone-900 text-white rounded-xl font-bold mt-4">
+                <button type="submit" className="w-full py-3 bg-stone-900 text-white rounded-xl font-bold mt-4 sticky bottom-0 shadow-lg">
                   {editingMasterDevice ? "Update Device" : "Save Device"}
                 </button>
               </form>
@@ -3503,206 +3530,254 @@ export default function App() {
       </AnimatePresence>
       <AnimatePresence>
         {showAddHardware && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              key={editingHardware?.id || 'new-hardware'}
+              className="bg-white w-full max-w-xl rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
             >
-              <div className="p-6 border-b border-stone-100 flex items-center justify-between">
-                <h2 className="font-bold text-xl capitalize">{editingHardware ? "Edit" : "Add New"} {showAddHardware}</h2>
-                <button onClick={() => { setShowAddHardware(null); setEditingHardware(null); }} className="p-2 hover:bg-stone-100 rounded-full"><X className="w-5 h-5" /></button>
-              </div>
-              <form 
-                className="p-6 space-y-4"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const fd = new FormData(e.currentTarget);
-                  const commonData = {
-                    name: fd.get("name") as string,
-                    price: Number(fd.get("price")),
-                    description: fd.get("description") as string,
-                    tags: (fd.get("tags") as string)?.split(",").map(t => t.trim()).filter(t => t !== "") || [],
-                  };
-
-                  if (showAddHardware === "inverter") {
-                    const data: Inverter = {
-                      id: editingHardware?.id || crypto.randomUUID(),
-                      ...commonData,
-                      max_ac_w: Number(fd.get("max_ac_w")),
-                      cc_max_pv_w: Number(fd.get("cc_max_pv_w")),
-                      cc_max_voc: Number(fd.get("cc_max_voc")),
-                      cc_max_amps: Number(fd.get("cc_max_amps")),
-                      system_vdc: Number(fd.get("system_vdc")),
-                      max_charge_amps: Number(fd.get("max_charge_amps")),
-                      cc_type: fd.get("cc_type") as "pwm" | "mppt",
-                      max_parallel_units: Number(fd.get("max_parallel_units") || 1),
-                    };
-                    if (editingHardware) {
-                      setInverters(inverters.map(i => i.id === editingHardware.id ? data : i));
-                    } else {
-                      setInverters([...inverters, data]);
-                    }
-                  } else if (showAddHardware === "panel") {
-                    const data: Panel = {
-                      id: editingHardware?.id || crypto.randomUUID(),
-                      ...commonData,
-                      watts: Number(fd.get("watts")),
-                      voc: Number(fd.get("voc")),
-                      isc: Number(fd.get("isc")),
-                    };
-                    if (editingHardware) {
-                      setPanels(panels.map(p => p.id === editingHardware.id ? data : p));
-                    } else {
-                      setPanels([...panels, data]);
-                    }
-                  } else if (showAddHardware === "battery") {
-                    const data: Battery = {
-                      id: editingHardware?.id || crypto.randomUUID(),
-                      ...commonData,
-                      voltage: Number(fd.get("voltage")),
-                      capacity_ah: Number(fd.get("capacity_ah")),
-                      type: fd.get("type") as any,
-                      max_parallel_strings: Number(fd.get("max_parallel_strings") || 10),
-                      min_c_rate: Number(fd.get("min_c_rate") || 0.1),
-                    };
-                    if (editingHardware) {
-                      setBatteries(batteries.map(b => b.id === editingHardware.id ? data : b));
-                    } else {
-                      setBatteries([...batteries, data]);
-                    }
-                  } else if (showAddHardware === "powerstation") {
-                    const data: Powerstation = {
-                      id: editingHardware?.id || crypto.randomUUID(),
-                      ...commonData,
-                      capacity_wh: Number(fd.get("capacity_wh")),
-                      max_output_w: Number(fd.get("max_output_w")),
-                      max_pv_input_w: Number(fd.get("max_pv_input_w")),
-                      battery_type: fd.get("battery_type") as any,
-                      inverter_type: fd.get("inverter_type") as any,
-                      max_charge_amps: Number(fd.get("max_charge_amps")),
-                      system_vdc: Number(fd.get("system_vdc")),
-                      cc_type: fd.get("cc_type") as any,
-                      cc_max_voc: Number(fd.get("cc_max_voc")),
-                      cc_max_amps: Number(fd.get("cc_max_amps")),
-                      max_parallel_units: Number(fd.get("max_parallel_units")),
-                      battery_voltage: Number(fd.get("battery_voltage")),
-                      capacity_ah: Number(fd.get("capacity_ah")),
-                      min_c_rate: Number(fd.get("min_c_rate")),
-                    };
-                    if (editingHardware) {
-                      setPowerstations(powerstations.map(ps => ps.id === editingHardware.id ? data : ps));
-                    } else {
-                      setPowerstations([...powerstations, data]);
-                    }
-
-                    if (isDeveloper) {
-                      const adminKey = sessionStorage.getItem("ss_admin_key");
-                      if (adminKey) {
-                        sdk.saveHardware({ id: data.id, type: "powerstation", data, tags: data.tags, description: data.description }, adminKey).catch(console.error);
-                      }
-                    }
-                  }
-
-                  // Global sync for other types if developer
-                  if (isDeveloper && showAddHardware !== "powerstation") {
-                    const adminKey = sessionStorage.getItem("ss_admin_key");
-                    if (adminKey) {
-                      const id = editingHardware?.id || crypto.randomUUID();
-                      let data: any;
-                      if (showAddHardware === "inverter") {
-                        data = { id, ...commonData, max_ac_w: Number(fd.get("max_ac_w")), cc_max_pv_w: Number(fd.get("cc_max_pv_w")), cc_max_voc: Number(fd.get("cc_max_voc")), cc_max_amps: Number(fd.get("cc_max_amps")), system_vdc: Number(fd.get("system_vdc")), max_charge_amps: Number(fd.get("max_charge_amps")), cc_type: fd.get("cc_type"), max_parallel_units: Number(fd.get("max_parallel_units") || 1) };
-                      } else if (showAddHardware === "panel") {
-                        data = { id, ...commonData, watts: Number(fd.get("watts")), voc: Number(fd.get("voc")), isc: Number(fd.get("isc")) };
-                      } else if (showAddHardware === "battery") {
-                        data = { id, ...commonData, voltage: Number(fd.get("voltage")), capacity_ah: Number(fd.get("capacity_ah")), type: fd.get("type"), max_parallel_strings: Number(fd.get("max_parallel_strings") || 10), min_c_rate: Number(fd.get("min_c_rate") || 0.1) };
-                      }
-                      sdk.saveHardware({ id, type: showAddHardware, data, tags: data.tags, description: data.description }, adminKey).catch(console.error);
-                    }
-                  }
-                  setShowAddHardware(null);
-                  setEditingHardware(null);
-                }}
-              >
-                {(() => {
-                  const currentItem = editingHardware 
-                    ? (editingHardware.type === "inverter" ? inverters.find(i => i.id === editingHardware.id)
-                      : editingHardware.type === "panel" ? panels.find(p => p.id === editingHardware.id)
-                      : editingHardware.type === "battery" ? batteries.find(b => b.id === editingHardware.id)
-                      : powerstations.find(ps => ps.id === editingHardware.id))
-                    : null;
-                  
-                  return (
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Model Name</label>
-                        <input name="name" defaultValue={currentItem?.name} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Description (for catalog)</label>
-                        <input name="description" defaultValue={(currentItem as any)?.description} placeholder="Brief marketing description..." className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Tags (comma separated)</label>
-                        <input name="tags" defaultValue={(currentItem as any)?.tags?.join(", ")} placeholder="e.g. residential, featured, budget" className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        {showAddHardware === "inverter" && (
-                          <>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Max AC (W)</label><input name="max_ac_w" type="number" defaultValue={(currentItem as Inverter)?.max_ac_w} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">DC Volts (V)</label><input name="system_vdc" type="number" defaultValue={(currentItem as Inverter)?.system_vdc} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">PV Max (W)</label><input name="cc_max_pv_w" type="number" defaultValue={(currentItem as Inverter)?.cc_max_pv_w} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Max Voc (V)</label><input name="cc_max_voc" type="number" defaultValue={(currentItem as Inverter)?.cc_max_voc} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Max Amps (A)</label><input name="cc_max_amps" type="number" defaultValue={(currentItem as Inverter)?.cc_max_amps} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Charge Amps (A)</label><input name="max_charge_amps" type="number" defaultValue={(currentItem as Inverter)?.max_charge_amps} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Max Parallel Units</label><input name="max_parallel_units" type="number" defaultValue={(currentItem as Inverter)?.max_parallel_units || 1} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">CC Type</label><select name="cc_type" defaultValue={(currentItem as Inverter)?.cc_type || "pwm"} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl"><option value="pwm">PWM</option><option value="mppt">MPPT</option></select></div>
-                          </>
-                        )}
-                        {showAddHardware === "panel" && (
-                          <>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Watts (W)</label><input name="watts" type="number" defaultValue={(currentItem as Panel)?.watts} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Voc (V)</label><input name="voc" type="number" defaultValue={(currentItem as Panel)?.voc} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Isc (A)</label><input name="isc" type="number" step="0.1" defaultValue={(currentItem as Panel)?.isc} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                          </>
-                        )}
-                        {showAddHardware === "battery" && (
-                          <>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Voltage (V)</label><input name="voltage" type="number" defaultValue={(currentItem as Battery)?.voltage} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Capacity (Ah)</label><input name="capacity_ah" type="number" defaultValue={(currentItem as Battery)?.capacity_ah} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Type</label><select name="type" defaultValue={(currentItem as Battery)?.type} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl"><option value="lithium">Lithium</option><option value="lead-acid">Lead-Acid</option></select></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Max Parallel</label><input name="max_parallel_strings" type="number" defaultValue={(currentItem as Battery)?.max_parallel_strings} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Min C-Rate</label><input name="min_c_rate" type="number" step="0.01" defaultValue={(currentItem as Battery)?.min_c_rate} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                          </>
-                        )}
-                        {showAddHardware === "powerstation" && (
-                          <>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Capacity (Wh)</label><input name="capacity_wh" type="number" defaultValue={(currentItem as Powerstation)?.capacity_wh} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Max Output (W)</label><input name="max_output_w" type="number" defaultValue={(currentItem as Powerstation)?.max_output_w} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Max PV Input (W)</label><input name="max_pv_input_w" type="number" defaultValue={(currentItem as Powerstation)?.max_pv_input_w} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Battery Type</label><select name="battery_type" defaultValue={(currentItem as Powerstation)?.battery_type || "lithium"} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl"><option value="lithium">Lithium</option><option value="lead-acid">Lead-Acid</option></select></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Inverter Type</label><select name="inverter_type" defaultValue={(currentItem as Powerstation)?.inverter_type || "pure-sine"} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl"><option value="pure-sine">Pure Sine</option><option value="modified-sine">Modified Sine</option></select></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Charge Amps (A)</label><input name="max_charge_amps" type="number" defaultValue={(currentItem as Powerstation)?.max_charge_amps} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">System VDC (V)</label><input name="system_vdc" type="number" defaultValue={(currentItem as Powerstation)?.system_vdc || 12} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">CC Type</label><select name="cc_type" defaultValue={(currentItem as Powerstation)?.cc_type || "mppt"} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl"><option value="pwm">PWM</option><option value="mppt">MPPT</option></select></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Max Voc (V)</label><input name="cc_max_voc" type="number" defaultValue={(currentItem as Powerstation)?.cc_max_voc} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Max CC Amps (A)</label><input name="cc_max_amps" type="number" defaultValue={(currentItem as Powerstation)?.cc_max_amps} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Max Parallel Units</label><input name="max_parallel_units" type="number" defaultValue={(currentItem as Powerstation)?.max_parallel_units || 1} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Battery Voltage (V)</label><input name="battery_voltage" type="number" defaultValue={(currentItem as Powerstation)?.battery_voltage} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Capacity (Ah)</label><input name="capacity_ah" type="number" defaultValue={(currentItem as Powerstation)?.capacity_ah} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                            <div><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Min C-Rate</label><input name="min_c_rate" type="number" step="0.01" defaultValue={(currentItem as Powerstation)?.min_c_rate || 0.1} className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                          </>
-                        )}
-                        <div className="col-span-2"><label className="block text-xs font-bold uppercase text-stone-500 mb-1">Price (₦)</label><input name="price" type="number" defaultValue={currentItem?.price} required className="w-full px-4 py-2 bg-stone-50 border border-stone-200 rounded-xl" /></div>
-                      </div>
-                    </div>
-                  );
-                })()}
-                <button type="submit" className="w-full py-3 bg-stone-900 text-white rounded-xl font-bold mt-4">
-                  {editingHardware ? "Update Component" : "Save Component"}
+              <div className="p-6 border-b border-stone-100 flex items-center justify-between bg-stone-50/50">
+                <div>
+                  <h2 className="text-xl font-black text-stone-900">
+                    {editingHardware ? "Edit" : "Add New"} {showAddHardware.charAt(0).toUpperCase() + showAddHardware.slice(1)}
+                  </h2>
+                  <p className="text-[10px] text-stone-500 font-bold mt-1 uppercase tracking-widest">Inventory Master Database</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setShowAddHardware(null);
+                    setEditingHardware(null);
+                  }}
+                  className="p-2 hover:bg-stone-200 rounded-full transition-colors bg-stone-100 text-stone-500"
+                >
+                  <X className="w-5 h-5" />
                 </button>
-              </form>
+              </div>
+
+              <form 
+                className="flex-1 flex flex-col overflow-hidden"
+                onSubmit={async (e) => {
+                    e.preventDefault();
+                    const fd = new FormData(e.currentTarget);
+                    const type = showAddHardware;
+                    const commonData = {
+                      name: fd.get("name") as string,
+                      description: fd.get("description") as string,
+                      tags: (fd.get("tags") as string || "").split(",").map(t => t.trim()).filter(Boolean),
+                      price: Number(fd.get("price"))
+                    };
+
+                    const id = editingHardware?.id || crypto.randomUUID();
+
+                    try {
+                      if (type === "inverter") {
+                        const data: Inverter = {
+                          id,
+                          ...commonData,
+                          max_ac_w: Number(fd.get("max_ac_w")),
+                          system_vdc: Number(fd.get("system_vdc")),
+                          cc_max_pv_w: Number(fd.get("cc_max_pv_w")),
+                          cc_max_voc: Number(fd.get("cc_max_voc")),
+                          cc_max_amps: Number(fd.get("cc_max_amps")),
+                          max_charge_amps: Number(fd.get("max_charge_amps")),
+                          cc_type: fd.get("cc_type") as any,
+                          max_parallel_units: Number(fd.get("max_parallel_units") || 1),
+                        };
+                        if (editingHardware) {
+                          setInverters(inverters.map(i => i.id === editingHardware.id ? data : i));
+                        } else {
+                          setInverters([...inverters, data]);
+                        }
+                        if (isDeveloper) {
+                          const adminKey = sessionStorage.getItem("ss_admin_key");
+                          if (adminKey) await sdk.saveHardware({ id, type, data, tags: data.tags, description: data.description }, adminKey);
+                        }
+                      } else if (type === "panel") {
+                        const data: Panel = {
+                          id,
+                          ...commonData,
+                          watts: Number(fd.get("watts")),
+                          voc: Number(fd.get("voc")),
+                          isc: Number(fd.get("isc")),
+                        };
+                        if (editingHardware) {
+                          setPanels(panels.map(p => p.id === editingHardware.id ? data : p));
+                        } else {
+                          setPanels([...panels, data]);
+                        }
+                        if (isDeveloper) {
+                          const adminKey = sessionStorage.getItem("ss_admin_key");
+                          if (adminKey) await sdk.saveHardware({ id, type, data, tags: data.tags, description: data.description }, adminKey);
+                        }
+                      } else if (type === "battery") {
+                        const data: Battery = {
+                          id,
+                          ...commonData,
+                          voltage: Number(fd.get("voltage")),
+                          capacity_ah: Number(fd.get("capacity_ah")),
+                          type: fd.get("type") as any,
+                          max_parallel_strings: Number(fd.get("max_parallel_strings") || 4),
+                          min_c_rate: Number(fd.get("min_c_rate") || 0.1),
+                        };
+                        if (editingHardware) {
+                          setBatteries(batteries.map(b => b.id === editingHardware.id ? data : b));
+                        } else {
+                          setBatteries([...batteries, data]);
+                        }
+                        if (isDeveloper) {
+                          const adminKey = sessionStorage.getItem("ss_admin_key");
+                          if (adminKey) await sdk.saveHardware({ id, type, data, tags: data.tags, description: data.description }, adminKey);
+                        }
+                      } else if (type === "powerstation") {
+                        const data: Powerstation = {
+                          id,
+                          ...commonData,
+                          capacity_wh: Number(fd.get("capacity_wh")),
+                          max_output_w: Number(fd.get("max_output_w")),
+                          max_pv_input_w: Number(fd.get("max_pv_input_w")),
+                          battery_type: fd.get("battery_type") as any,
+                          inverter_type: fd.get("inverter_type") as any,
+                          max_charge_amps: Number(fd.get("max_charge_amps")),
+                          system_vdc: Number(fd.get("system_vdc")),
+                          cc_type: fd.get("cc_type") as any,
+                          cc_max_voc: Number(fd.get("cc_max_voc")),
+                          cc_max_amps: Number(fd.get("cc_max_amps")),
+                          max_parallel_units: Number(fd.get("max_parallel_units")),
+                          battery_voltage: Number(fd.get("battery_voltage")),
+                          capacity_ah: Number(fd.get("capacity_ah")),
+                          min_c_rate: Number(fd.get("min_c_rate")),
+                        };
+                        if (editingHardware) {
+                          setPowerstations(powerstations.map(ps => ps.id === editingHardware.id ? data : ps));
+                        } else {
+                          setPowerstations([...powerstations, data]);
+                        }
+                        if (isDeveloper) {
+                          const adminKey = sessionStorage.getItem("ss_admin_key");
+                          if (adminKey) await sdk.saveHardware({ id, type, data, tags: data.tags, description: data.description }, adminKey);
+                        }
+                      }
+
+                      setShowAddHardware(null);
+                      setEditingHardware(null);
+                    } catch (err) {
+                      console.error("Failed to save hardware:", err);
+                      alert("Error saving hardware. Check console.");
+                    }
+                  }}
+                >
+                  {(() => {
+                    const currentItem = editingHardware 
+                      ? (editingHardware.type === "inverter" ? inverters.find(i => i.id === editingHardware.id)
+                        : editingHardware.type === "panel" ? panels.find(p => p.id === editingHardware.id)
+                        : editingHardware.type === "battery" ? batteries.find(b => b.id === editingHardware.id)
+                        : powerstations.find(ps => ps.id === editingHardware.id))
+                      : null;
+                    
+                    const itemData = (currentItem || editingHardware) as any;
+
+                    return (
+                      <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                        <div className="space-y-6">
+                        <div className="space-y-4">
+                          <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest border-b border-stone-100 pb-2">General Specifications</p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="md:col-span-2">
+                              <label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Model Name</label>
+                              <input name="name" defaultValue={itemData?.name} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl focus:ring-2 focus:ring-stone-900 transition-all outline-none" placeholder="Enter model name..." />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Unit Price (₦)</label>
+                              <input 
+                                name="price" 
+                                type="number" 
+                                defaultValue={itemData?.price || 0} 
+                                required 
+                                className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl focus:ring-2 focus:ring-stone-900 transition-all outline-none font-bold text-stone-900" 
+                                placeholder="0"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Description</label>
+                            <textarea name="description" defaultValue={itemData?.description} placeholder="Enter marketing description..." className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl focus:ring-2 focus:ring-stone-900 transition-all outline-none min-h-[80px] resize-none" />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Tags (comma separated)</label>
+                            <input name="tags" defaultValue={itemData?.tags?.join(", ")} placeholder="residential, flagship..." className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl focus:ring-2 focus:ring-stone-900 transition-all outline-none" />
+                          </div>
+                        </div>
+
+                        <div className="space-y-4 pt-4 border-t border-stone-100">
+                          <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest mb-4">Technical Parameters</p>
+                          <div className="grid grid-cols-2 gap-4">
+                            {showAddHardware === "inverter" && (
+                              <>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Max AC (W)</label><input name="max_ac_w" type="number" step="any" defaultValue={(itemData as Inverter)?.max_ac_w} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">System Volts</label><input name="system_vdc" type="number" step="any" defaultValue={(itemData as Inverter)?.system_vdc || 12} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">PV Input (max W)</label><input name="cc_max_pv_w" type="number" step="any" defaultValue={(itemData as Inverter)?.cc_max_pv_w} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Max Voc (V)</label><input name="cc_max_voc" type="number" step="any" defaultValue={(itemData as Inverter)?.cc_max_voc} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Max Amps (A)</label><input name="cc_max_amps" type="number" step="any" defaultValue={(itemData as Inverter)?.cc_max_amps} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Charge Rate (A)</label><input name="max_charge_amps" type="number" step="any" defaultValue={(itemData as Inverter)?.max_charge_amps} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Parallel Units</label><input name="max_parallel_units" type="number" step="any" defaultValue={(itemData as Inverter)?.max_parallel_units || 1} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">CC Type</label><select name="cc_type" defaultValue={(itemData as Inverter)?.cc_type || "pwm"} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl"><option value="pwm">PWM</option><option value="mppt">MPPT</option></select></div>
+                              </>
+                            )}
+                            {showAddHardware === "panel" && (
+                              <>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Watts (W)</label><input name="watts" type="number" step="any" defaultValue={(itemData as Panel)?.watts} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Voc (V)</label><input name="voc" type="number" step="any" defaultValue={(itemData as Panel)?.voc} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Isc (A)</label><input name="isc" type="number" step="any" defaultValue={(itemData as Panel)?.isc} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                              </>
+                            )}
+                            {showAddHardware === "battery" && (
+                              <>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Voltage (V)</label><input name="voltage" type="number" step="any" defaultValue={(itemData as Battery)?.voltage} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl font-bold text-stone-900" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Capacity (Ah)</label><input name="capacity_ah" type="number" step="any" defaultValue={(itemData as Battery)?.capacity_ah} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Type</label><select name="type" defaultValue={(itemData as Battery)?.type} className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl text-stone-900"><option value="lithium">Lithium</option><option value="lead-acid">Lead-Acid</option></select></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Parallel Max</label><input name="max_parallel_strings" type="number" step="any" defaultValue={(itemData as Battery)?.max_parallel_strings || 1} className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Min C-Rate</label><input name="min_c_rate" type="number" step="any" defaultValue={(itemData as Battery)?.min_c_rate || 0.1} className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                              </>
+                            )}
+                            {showAddHardware === "powerstation" && (
+                              <>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Capacity (Wh)</label><input name="capacity_wh" type="number" step="any" defaultValue={(itemData as Powerstation)?.capacity_wh} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Output (W)</label><input name="max_output_w" type="number" step="any" defaultValue={(itemData as Powerstation)?.max_output_w} required className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">PV Input (W)</label><input name="max_pv_input_w" type="number" step="any" defaultValue={(itemData as Powerstation)?.max_pv_input_w} className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">System Volts</label><input name="system_vdc" type="number" step="any" defaultValue={(itemData as Powerstation)?.system_vdc} className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">Charge Rate (A)</label><input name="max_charge_amps" type="number" step="any" defaultValue={(itemData as Powerstation)?.max_charge_amps} className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">CC Type</label><select name="cc_type" defaultValue={(itemData as Powerstation)?.cc_type || "pwm"} className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl"><option value="pwm">PWM</option><option value="mppt">MPPT</option></select></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">CC Max Voc</label><input name="cc_max_voc" type="number" step="any" defaultValue={(itemData as Powerstation)?.cc_max_voc} className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                                <div><label className="block text-[10px] font-black uppercase text-stone-500 mb-1.5 ml-1">CC Max Amps</label><input name="cc_max_amps" type="number" step="any" defaultValue={(itemData as Powerstation)?.cc_max_amps} className="w-full px-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl" /></div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <div className="p-6 bg-white border-t border-stone-100 flex gap-3">
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setShowAddHardware(null);
+                        setEditingHardware(null);
+                      }}
+                      className="flex-1 py-3 bg-stone-100 text-stone-600 rounded-xl font-bold hover:bg-stone-200 transition-all"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="submit" 
+                      className="flex-[2] py-3 bg-stone-900 text-white rounded-xl font-bold hover:bg-stone-800 transition-all shadow-lg"
+                    >
+                      {editingHardware ? "Update Component" : "Save Component"}
+                    </button>
+                  </div>
+                </form>
             </motion.div>
           </div>
         )}
@@ -3734,7 +3809,7 @@ export default function App() {
               <div className="flex-1 overflow-y-auto p-6 space-y-3">
                 {selectedSystemLog.map((line, i) => (
                   <div 
-                    key={i} 
+                    key={`sys-log-${i}`} 
                     className={`p-3 rounded-xl text-sm font-mono flex gap-3 ${
                       line.includes('✅') ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' :
                       line.includes('❌') ? 'bg-red-50 text-red-800 border border-red-100' :
